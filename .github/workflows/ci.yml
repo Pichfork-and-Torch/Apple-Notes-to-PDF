@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required product files
+        run: |
+          set -euo pipefail
+          test -f export-apple-notes.sh
+          test -f render-note-to-pdf.applescript
+          test -f export-apple-notes.command
+          test -f VERSION
+          test -f LICENSE
+          test -f SECURITY.md
+          test -f README.md
+          # shebang + fail-fast
+          head -n1 export-apple-notes.sh | grep -Eq '^#!/(usr/bin/env )?(ba)?zsh|#!/bin/zsh'
+          grep -q 'set -euo pipefail' export-apple-notes.sh
+          # version alignment
+          VER_FILE=$(tr -d ' \r\n' < VERSION)
+          grep -q "VERSION=\"${VER_FILE}\"" export-apple-notes.sh
+          echo "Product files OK (v${VER_FILE})"
+
+      - name: ShellCheck (common pitfalls)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck zsh
+          # Primary script is zsh; bash dialect still catches unbound/arg issues
+          shellcheck -S error -s bash \
+            --exclude=SC2039,SC3046,SC3010,SC3037,SC2298,SC1009,SC1073,SC1072 \
+            export-apple-notes.sh
+          echo "ShellCheck: passed"
+
+      - name: CLI help and version (no Notes.app required)
+        run: |
+          set -euo pipefail
+          # These paths exit before osascript â€” safe on Ubuntu CI
+          out=$(zsh ./export-apple-notes.sh --help)
+          echo "$out" | grep -q 'Apple Notes to PDF'
+          echo "$out" | grep -q -- '--limit'
+          echo "$out" | grep -q -- '--output-dir'
+          echo "$out" | grep -q -- '--folder'
+          ver=$(zsh ./export-apple-notes.sh --version)
+          echo "$ver" | grep -q "$(tr -d ' \r\n' < VERSION)"
+          # Bad flags must fail loudly
+          if zsh ./export-apple-notes.sh --not-a-real-flag 2>/dev/null; then
+            echo "expected unknown flag to fail" >&2
+            exit 1
+          fi
+          if zsh ./export-apple-notes.sh --limit 2>/dev/null; then
+            echo "expected missing --limit value to fail" >&2
+            exit 1
+          fi
+          echo "CLI smoke: OK"

@@ -1,0 +1,8 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX/
+*.zip
+dist/
+*.log
+Thumbs.db
